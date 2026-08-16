@@ -1,10 +1,13 @@
 package com.masterbikers.master_bikers.product;
 
-import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,10 +50,16 @@ public class ProductService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ProductResponse> list() {
-		return productRepository.findAll().stream()
-				.map(productMapper::toResponse)
-				.toList();
+	public Page<ProductResponse> list(ProductFilter filter, Pageable pageable) {
+		Specification<Product> specification = (root, query, builder) -> builder.conjunction();
+		specification = specification
+				.and(containsIgnoreCase("name", filter.name()))
+				.and(containsIgnoreCase("category", filter.category()))
+				.and(equalsValue("availability", filter.availability()))
+				.and(equalsValue("condition", filter.condition()))
+				.and(containsIgnoreCase("brand", filter.brand()))
+				.and(equalsValue("source", filter.source()));
+		return productRepository.findAll(specification, pageable).map(productMapper::toResponse);
 	}
 
 	@Transactional(readOnly = true)
@@ -76,6 +85,24 @@ public class ProductService {
 	@Transactional
 	public void delete(UUID id) {
 		productRepository.delete(findProduct(id));
+	}
+
+	private Specification<Product> containsIgnoreCase(String field, String value) {
+		if (value == null || value.isBlank()) {
+			return Specification.unrestricted();
+		}
+		String escaped = value.strip().toLowerCase(Locale.ROOT)
+				.replace("\\", "\\\\")
+				.replace("%", "\\%")
+				.replace("_", "\\_");
+		return (root, query, builder) -> builder.like(
+				builder.lower(root.get(field)), "%" + escaped + "%", '\\');
+	}
+
+	private Specification<Product> equalsValue(String field, Object value) {
+		return value == null
+				? Specification.unrestricted()
+				: (root, query, builder) -> builder.equal(root.get(field), value);
 	}
 
 	private Product findProduct(UUID id) {

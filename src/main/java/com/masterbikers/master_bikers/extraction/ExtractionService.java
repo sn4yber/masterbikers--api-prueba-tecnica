@@ -1,35 +1,43 @@
 package com.masterbikers.master_bikers.extraction;
 
-import java.util.List;
-
-import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExtractionService {
 
 	private final ExtractionJobRepository jobRepository;
-	private final ExtractionItemRepository itemRepository;
-	private final ApplicationEventPublisher eventPublisher;
+	private final ExtractionCreationTransaction creationTransaction;
+	private final ExtractionRequestHasher requestHasher;
 
 	public ExtractionService(
 			ExtractionJobRepository jobRepository,
-			ExtractionItemRepository itemRepository,
-			ApplicationEventPublisher eventPublisher) {
+			ExtractionCreationTransaction creationTransaction,
+			ExtractionRequestHasher requestHasher) {
 		this.jobRepository = jobRepository;
-		this.itemRepository = itemRepository;
-		this.eventPublisher = eventPublisher;
+		this.creationTransaction = creationTransaction;
+		this.requestHasher = requestHasher;
 	}
 
-	@Transactional
 	public ExtractionCreatedResponse create(ExtractionCreateRequest request) {
-		ExtractionJob job = jobRepository.save(ExtractionJob.create(request.productIds().size()));
-		List<ExtractionItem> items = request.productIds().stream()
-				.map(productId -> ExtractionItem.create(job, productId.toString()))
-				.toList();
-		itemRepository.saveAll(items);
-		eventPublisher.publishEvent(new ExtractionCreatedEvent(job.getId()));
+		String requestHash = requestHasher.hash(request);
+		return jobRepository.findByRequestHash(requestHash)
+				.map(this::toResponse)
+				.orElseGet(() -> createSafely(request, requestHash));
+	}
+
+	private ExtractionCreatedResponse createSafely(ExtractionCreateRequest request, String requestHash) {
+		try {
+			return creationTransaction.create(request, requestHash);
+		}
+		catch (DataIntegrityViolationException exception) {
+			return jobRepository.findByRequestHash(requestHash)
+					.map(this::toResponse)
+					.orElseThrow(() -> exception);
+		}
+	}
+
+	private ExtractionCreatedResponse toResponse(ExtractionJob job) {
 		return new ExtractionCreatedResponse(job.getId(), job.getStatus());
 	}
 }

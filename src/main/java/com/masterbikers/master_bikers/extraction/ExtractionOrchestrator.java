@@ -32,7 +32,7 @@ public class ExtractionOrchestrator {
 	}
 
 	@Async("extractionJobExecutor")
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
 	public void process(ExtractionCreatedEvent event) {
 		UUID jobId = event.jobId();
 		try {

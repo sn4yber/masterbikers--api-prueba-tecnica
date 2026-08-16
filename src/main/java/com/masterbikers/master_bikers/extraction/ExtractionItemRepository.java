@@ -16,6 +16,10 @@ public interface ExtractionItemRepository extends JpaRepository<ExtractionItem, 
 	@Query("select item from ExtractionItem item where item.extractionJob.id = :jobId order by item.externalProductId asc")
 	List<ExtractionItem> findAllByJobId(@Param("jobId") UUID jobId);
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select item from ExtractionItem item where item.extractionJob.id = :jobId order by item.externalProductId asc")
+	List<ExtractionItem> findAllByJobIdForUpdate(@Param("jobId") UUID jobId);
+
 	@Query("select item.id from ExtractionItem item where item.extractionJob.id = :jobId order by item.externalProductId asc")
 	List<UUID> findIdsByJobId(@Param("jobId") UUID jobId);
 

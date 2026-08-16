@@ -26,6 +26,9 @@ public class ExtractionJob {
 	@Column(name = "total", nullable = false)
 	private int total;
 
+	@Column(name = "request_hash", nullable = false, updatable = false, length = 64, unique = true)
+	private String requestHash;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -38,18 +41,28 @@ public class ExtractionJob {
 	protected ExtractionJob() {
 	}
 
-	private ExtractionJob(int total) {
+	private ExtractionJob(int total, String requestHash) {
 		if (total <= 0) {
 			throw new IllegalArgumentException("total must be positive");
+		}
+		if (requestHash == null || requestHash.length() != 64) {
+			throw new IllegalArgumentException("requestHash must contain 64 characters");
 		}
 		this.id = UUID.randomUUID();
 		this.status = ExtractionStatus.PENDING;
 		this.total = total;
+		this.requestHash = requestHash;
 		this.createdAt = Instant.now();
 	}
 
+	public static ExtractionJob create(int total, String requestHash) {
+		return new ExtractionJob(total, requestHash);
+	}
+
 	public static ExtractionJob create(int total) {
-		return new ExtractionJob(total);
+		String requestHash = UUID.randomUUID().toString().replace("-", "")
+				+ UUID.randomUUID().toString().replace("-", "");
+		return new ExtractionJob(total, requestHash);
 	}
 
 	public boolean start() {
@@ -58,6 +71,16 @@ public class ExtractionJob {
 		}
 		status = ExtractionStatus.PROCESSING;
 		startedAt = Instant.now();
+		return true;
+	}
+
+	public boolean recover() {
+		if (status != ExtractionStatus.PENDING && status != ExtractionStatus.PROCESSING) {
+			return false;
+		}
+		status = ExtractionStatus.PENDING;
+		startedAt = null;
+		finishedAt = null;
 		return true;
 	}
 
@@ -115,6 +138,10 @@ public class ExtractionJob {
 
 	public int getTotal() {
 		return total;
+	}
+
+	public String getRequestHash() {
+		return requestHash;
 	}
 
 	public Instant getCreatedAt() {

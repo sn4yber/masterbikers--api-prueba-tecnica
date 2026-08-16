@@ -75,6 +75,16 @@ public class ExtractionItem {
 		return true;
 	}
 
+	public void recover() {
+		if (status != ExtractionItemStatus.PROCESSING) {
+			return;
+		}
+		status = ExtractionItemStatus.PENDING;
+		productId = null;
+		errorMessage = null;
+		processedAt = null;
+	}
+
 	public void succeed(UUID productId) {
 		if (status != ExtractionItemStatus.PROCESSING) {
 			return;

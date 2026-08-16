@@ -4,12 +4,16 @@ Servicio backend para gestionar productos y sincronizarlos desde páginas HTML d
 
 ## Funcionalidades
 
-- CRUD REST de productos.
+- CRUD REST de productos con paginación y filtros combinables.
 - Persistencia en PostgreSQL.
 - Extracción directa desde `https://automationexercise.com/product_details/{id}` con Jsoup.
 - Procesamiento asíncrono de hasta tres productos simultáneos.
+- Recuperación automática de trabajos interrumpidos al arrancar.
+- Reintentos con backoff exponencial para errores de red, HTTP `429` y HTTP `5xx`.
+- Idempotencia para solicitudes de extracción equivalentes.
 - Aislamiento de errores por producto.
 - Consulta persistida del estado, progreso y resultado de cada trabajo.
+- Métricas de duración, éxito y fallo de scraping mediante Actuator y Micrometer.
 - Validación de entradas y errores con formato RFC Problem Details.
 - Migraciones versionadas con Flyway.
 - OpenAPI y Swagger UI.
@@ -25,8 +29,9 @@ Servicio backend para gestionar productos y sincronizarlos desde páginas HTML d
 - PostgreSQL
 - Flyway
 - Jsoup
+- Micrometer y Spring Boot Actuator
 - Maven
-- JUnit 5 y Mockito
+- JUnit 5, Mockito y Testcontainers
 - Springdoc OpenAPI
 - Docker y Docker Compose
 
@@ -62,17 +67,30 @@ Valores configurables:
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` |
 | `AUTOMATION_EXERCISE_BASE_URL` | `https://automationexercise.com` |
 | `SCRAPER_TIMEOUT_MS` | `10000` |
+| `SCRAPER_MAX_ATTEMPTS` | `3` |
+| `SCRAPER_INITIAL_BACKOFF_MS` | `200` |
+| `SCRAPER_MAX_BACKOFF_MS` | `2000` |
 
 La contraseña no se almacena en el repositorio. Flyway aplica las migraciones al arrancar. Las migraciones crean tablas y restricciones, pero no insertan productos ni datos de demostración.
 
 ### Docker Compose
 
+Credenciales locales se cargan desde `.env`, archivo ignorado por Git. Configurar `DB_NAME`, `DB_USERNAME` y `DB_PASSWORD` antes de iniciar.
+
+Iniciar backend y PostgreSQL:
+
 ```bash
-export DB_PASSWORD='tu-clave-local'
-docker compose up --build
+docker compose up --build -d
+docker compose ps
 ```
 
-Esto inicia PostgreSQL y la API. Los datos de PostgreSQL permanecen en el volumen `postgres-data`.
+Ver logs del backend:
+
+```bash
+docker compose logs -f api
+```
+
+Esto inicia PostgreSQL en `localhost:5432` y API en `localhost:8080`. Datos de PostgreSQL permanecen en volumen `postgres-data`.
 
 ## Documentación HTTP
 
@@ -80,16 +98,33 @@ Con la aplicación ejecutándose:
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/api-docs`
+- Salud: `http://localhost:8080/actuator/health`
+- Catálogo de métricas: `http://localhost:8080/actuator/metrics`
+- Métricas de scraping: `scraping.duration`, `scraping.success`, `scraping.failure`
 
 ## API de productos
 
 | Método | Ruta | Resultado |
 |---|---|---|
 | `POST` | `/api/v1/products` | Crea un producto y responde `201 Created`. |
-| `GET` | `/api/v1/products` | Lista productos. |
+| `GET` | `/api/v1/products` | Devuelve página de productos con filtros opcionales. |
 | `GET` | `/api/v1/products/{id}` | Consulta un producto. |
 | `PATCH` | `/api/v1/products/{id}` | Actualiza campos enviados. |
 | `DELETE` | `/api/v1/products/{id}` | Elimina un producto y responde `204 No Content`. |
+
+Parámetros de listado:
+
+- paginación: `page` desde `0`, `size` hasta `100` y `sort=campo,dirección`;
+- texto parcial sin distinguir mayúsculas: `name`, `category`, `brand`;
+- coincidencia exacta: `availability`, `condition`, `source`.
+
+Ejemplo:
+
+```http
+GET /api/v1/products?page=0&size=20&sort=price,asc&name=bike&availability=IN_STOCK
+```
+
+La respuesta usa representación estable `PagedModel`: `content` contiene productos y `page` contiene `size`, `number`, `totalElements` y `totalPages`.
 
 Producto manual de ejemplo:
 
@@ -140,6 +175,8 @@ Location: /api/v1/extractions/{id}
   "status": "PENDING"
 }
 ```
+
+La lista ordenada de `productIds` se resume con SHA-256. Repetir una solicitud con mismos IDs, incluso en otro orden, devuelve mismo trabajo y no crea items ni tráfico de scraping adicional.
 
 Consultar progreso:
 
@@ -193,6 +230,10 @@ PENDING -> PROCESSING -> SUCCESS
 7. Producto se crea o actualiza y el item termina en `SUCCESS`; errores terminan en `FAILED` sin detener demás items.
 8. Estado final se calcula usando estados persistidos.
 
+Al arrancar, trabajos `PENDING` o `PROCESSING` se recuperan. Jobs interrumpidos vuelven a `PENDING`, items que quedaron en `PROCESSING` también vuelven a `PENDING`, y procesamiento se agenda otra vez. Items ya terminados conservan resultado.
+
+Errores de red, HTTP `429` y HTTP `5xx` se reintentan hasta límite configurado con backoff exponencial. Otros errores HTTP fallan inmediatamente. Cada operación final registra contador de éxito o fallo y duración total incluyendo reintentos.
+
 Los contadores de progreso se consultan desde `extraction_items`; no dependen de memoria del proceso. Bloqueos pesimistas protegen transiciones iniciales frente a procesamiento duplicado.
 
 ## Modelo y migraciones
@@ -201,6 +242,7 @@ Migraciones en `src/main/resources/db/migration`:
 
 - `V1__create_products.sql`
 - `V2__create_extraction_jobs_and_items.sql`
+- `V3__add_extraction_idempotency.sql`
 
 Esquema mínimo deliberado:
 
@@ -216,15 +258,21 @@ Marca se almacena como texto porque Automation Exercise entrega marcas dinámica
 ./mvnw test
 ```
 
+Docker debe estar disponible para ejecutar pruebas PostgreSQL; si no está disponible, Testcontainers omite exclusivamente esas pruebas.
+
 Pruebas cubren:
 
 - validación de creación y actualización de productos;
 - creación, consulta y eliminación en servicio;
 - deduplicación por referencia externa;
 - parsing HTML sin acceso de red;
+- reintentos HTTP, clasificación de errores temporales y métricas;
 - validación de solicitudes de extracción;
+- hash e idempotencia de solicitudes equivalentes;
+- recuperación de jobs e items interrumpidos;
 - transiciones de jobs e items;
-- cálculo persistido del progreso.
+- cálculo persistido del progreso;
+- migraciones, filtros y paginación sobre PostgreSQL real mediante Testcontainers.
 
 ## Manejo de errores
 
@@ -232,19 +280,19 @@ API responde `application/problem+json` para errores `400`, `404`, `409` y `500`
 
 ## Decisiones y trade-offs
 
-- Executors internos evitan agregar Redis, RabbitMQ o Kafka para un servicio pequeño y una prueba de tres días.
-- Límite global de tres threads evita consultas externas ilimitadas.
+- Executors internos evitan agregar Redis, RabbitMQ o Kafka para un servicio pequeño.
+- Límite global de tres threads y reintentos acotados evitan consultas externas ilimitadas.
 - Estados y resultados viven en PostgreSQL; executor solo ejecuta trabajo.
-- Reinicio durante procesamiento puede dejar jobs en `PROCESSING`. En producción se agregaría recuperación de jobs incompletos al arrancar o una cola durable.
-- Lista de productos no tiene paginación en MVP. Se agregaría antes de manejar catálogos grandes.
+- Recuperación al arrancar cubre reinicios de una instancia. Despliegue activo-activo requeriría leases o cola durable.
+- Idempotencia reutiliza indefinidamente trabajo equivalente; una futura operación explícita podría forzar resincronización.
+- Filtros textuales priorizan simplicidad; catálogos grandes podrían requerir índices trigram y búsqueda dedicada.
 - No se agregó autenticación porque el reto no la solicita.
-- No se agregaron reintentos automáticos para evitar duplicar tráfico externo; serían mejora posterior con backoff para errores temporales.
 
 ## Uso de inteligencia artificial
 
 Se utilizó Devin como apoyo para analizar requerimientos, revisar decisiones, implementar partes del código y ejecutar verificaciones. Las decisiones finales, estructura y comportamiento deben revisarse y comprenderse antes de presentar la solución.
 
-## Mejoras con más tiempo
+## Mejoras completadas
 
 - Recuperación automática de trabajos interrumpidos.
 - Reintentos con backoff para errores HTTP temporales.

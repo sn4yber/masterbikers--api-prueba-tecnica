@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +19,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 
 import com.masterbikers.master_bikers.common.exception.ConflictException;
 import com.masterbikers.master_bikers.common.exception.ResourceNotFoundException;
@@ -86,6 +91,21 @@ class ProductServiceTests {
 		assertEquals("Updated Bike", response.name());
 		assertEquals(new BigDecimal("1500.00"), response.price());
 		assertEquals(ProductCondition.USED, response.condition());
+	}
+
+	@Test
+	void returnsPagedFilteredProducts() {
+		Product product = Product.create(createRequest(null, null));
+		PageRequest pageable = PageRequest.of(0, 20);
+		when(productRepository.findAll(org.mockito.ArgumentMatchers.<Specification<Product>>any(), eq(pageable)))
+				.thenReturn(new PageImpl<>(List.of(product), pageable, 1));
+		ProductFilter filter = new ProductFilter(
+				"road", "bikes", ProductAvailability.UNKNOWN, ProductCondition.NEW, "master", null);
+
+		var response = productService.list(filter, pageable);
+
+		assertEquals(1, response.getTotalElements());
+		assertEquals("Road Bike", response.getContent().getFirst().name());
 	}
 
 	@Test

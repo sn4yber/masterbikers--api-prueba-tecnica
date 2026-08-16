@@ -74,4 +74,20 @@ class ExtractionDomainTests {
 		assertEquals(productId, item.getProductId());
 		assertNull(item.getErrorMessage());
 	}
+
+	@Test
+	void resetsInterruptedJobAndItemForRecovery() {
+		ExtractionJob job = ExtractionJob.create(1);
+		ExtractionItem item = ExtractionItem.create(job, "9");
+		job.start();
+		item.start();
+
+		assertTrue(job.recover());
+		item.recover();
+
+		assertEquals(ExtractionStatus.PENDING, job.getStatus());
+		assertNull(job.getStartedAt());
+		assertEquals(ExtractionItemStatus.PENDING, item.getStatus());
+		assertNull(item.getProcessedAt());
+	}
 }

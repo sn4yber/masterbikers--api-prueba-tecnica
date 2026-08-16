@@ -27,6 +27,17 @@ public class ExtractionStateService {
 				.orElse(false);
 	}
 
+	@Transactional
+	public boolean recoverJob(UUID jobId) {
+		return jobRepository.findByIdForUpdate(jobId)
+				.filter(ExtractionJob::recover)
+				.map(job -> {
+					itemRepository.findAllByJobIdForUpdate(jobId).forEach(ExtractionItem::recover);
+					return true;
+				})
+				.orElse(false);
+	}
+
 	@Transactional(readOnly = true)
 	public List<UUID> getItemIds(UUID jobId) {
 		return itemRepository.findIdsByJobId(jobId);
@@ -41,12 +52,12 @@ public class ExtractionStateService {
 
 	@Transactional
 	public void succeedItem(UUID itemId, UUID productId) {
-		itemRepository.findById(itemId).ifPresent(item -> item.succeed(productId));
+		itemRepository.findByIdForUpdate(itemId).ifPresent(item -> item.succeed(productId));
 	}
 
 	@Transactional
 	public void failItem(UUID itemId, String safeMessage) {
-		itemRepository.findById(itemId).ifPresent(item -> item.fail(safeMessage));
+		itemRepository.findByIdForUpdate(itemId).ifPresent(item -> item.fail(safeMessage));
 	}
 
 	@Transactional
