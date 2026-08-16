@@ -94,7 +94,15 @@ Esto inicia PostgreSQL en `localhost:${DB_PORT}` (`5433` en `.env`) y API en `lo
 
 ## Documentación HTTP
 
-Con la aplicación ejecutándose:
+Despliegue público en DigitalOcean:
+
+- URL base de la API: `http://45.55.225.78:8080`
+- Swagger UI: `http://45.55.225.78:8080/swagger-ui.html`
+- OpenAPI JSON: `http://45.55.225.78:8080/api-docs`
+- Salud: `http://45.55.225.78:8080/actuator/health`
+- Catálogo de métricas: `http://45.55.225.78:8080/actuator/metrics`
+
+Entorno local:
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/api-docs`
