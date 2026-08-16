@@ -64,7 +64,7 @@ Valores configurables:
 | `DB_URL` | `jdbc:postgresql://localhost:5432/masterbikers` |
 | `DB_USERNAME` | `postgres` |
 | `DB_PASSWORD` | vacío |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173,https://masterbikers.netlify.app` |
 | `AUTOMATION_EXERCISE_BASE_URL` | `https://automationexercise.com` |
 | `SCRAPER_TIMEOUT_MS` | `10000` |
 | `SCRAPER_MAX_ATTEMPTS` | `3` |
@@ -111,7 +111,7 @@ Pruebas ejecutadas exitosamente:
 - creación, consulta, actualización y eliminación de productos;
 - paginación, ordenamiento y filtros combinables;
 - validación de solicitudes inválidas y formato RFC Problem Details;
-- configuración CORS para frontend local;
+- configuración CORS para frontend local y desplegado;
 - creación y procesamiento asíncrono de extracciones;
 - consulta de estado e items de extracción;
 - idempotencia de solicitudes de extracción equivalentes;
