@@ -90,7 +90,7 @@ Ver logs del backend:
 docker compose logs -f api
 ```
 
-Esto inicia PostgreSQL en `localhost:5432` y API en `localhost:8080`. Datos de PostgreSQL permanecen en volumen `postgres-data`.
+Esto inicia PostgreSQL en `localhost:${DB_PORT}` (`5433` en `.env`) y API en `localhost:8080`. Dentro de Compose, backend usa `postgres:5432`. Datos permanecen en volumen `postgres18-data` montado según estructura requerida por PostgreSQL 18.
 
 ## Documentación HTTP
 
@@ -101,6 +101,22 @@ Con la aplicación ejecutándose:
 - Salud: `http://localhost:8080/actuator/health`
 - Catálogo de métricas: `http://localhost:8080/actuator/metrics`
 - Métricas de scraping: `scraping.duration`, `scraping.success`, `scraping.failure`
+
+## Verificación del piloto
+
+Pruebas ejecutadas exitosamente:
+
+- arranque de API y PostgreSQL 18 mediante Docker Compose;
+- estado de salud y acceso a documentación OpenAPI;
+- creación, consulta, actualización y eliminación de productos;
+- paginación, ordenamiento y filtros combinables;
+- validación de solicitudes inválidas y formato RFC Problem Details;
+- configuración CORS para frontend local;
+- creación y procesamiento asíncrono de extracciones;
+- consulta de estado e items de extracción;
+- idempotencia de solicitudes de extracción equivalentes;
+- persistencia de productos extraídos;
+- registro de métricas de scraping.
 
 ## API de productos
 
