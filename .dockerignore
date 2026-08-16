@@ -1,0 +1,8 @@
+.git
+.idea
+graphify-out
+target
+*.iml
+*.log
+.env
+application-local.properties

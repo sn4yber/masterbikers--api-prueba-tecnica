@@ -3,6 +3,10 @@
 Prueba técnica — Ingeniero de Software Jr. Ventana de entrega: **3 días calendario**.
 Repositorio en GitHub con colaborador: **gruporedoficial**.
 
+> Documento de análisis y diseño inicial. La implementación final prioriza el alcance P0 del reto.
+> `README.md` y las migraciones Flyway describen el comportamiento ejecutable. Marcas como entidad,
+> proveedores y facturación permanecen como posibles extensiones, no como parte del MVP implementado.
+
 ---
 
 ## 1. Descripción del proyecto

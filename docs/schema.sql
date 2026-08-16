@@ -1,6 +1,7 @@
 -- ============================================================
--- MASTER BIKERS - Schema de base de datos (PostgreSQL)
--- API backend consumida por un frontend
+-- MASTER BIKERS - Propuesta inicial de modelo ampliado
+-- Documento de diseño; este archivo no se ejecuta.
+-- Esquema MVP autoritativo: src/main/resources/db/migration/
 -- ============================================================
 
 -- Extensión necesaria para generar UUID (si se requiere en BD)

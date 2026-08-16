@@ -1,222 +1,254 @@
-# MASTER BIKERS — Levantamiento de Requerimientos (consolidado)
+# Master Bikers API
 
-Prueba técnica — Ingeniero de Software Jr. Ventana de entrega: **3 días calendario**.
-Repositorio en GitHub con colaborador: **gruporedoficial**.
+Servicio backend para gestionar productos y sincronizarlos desde páginas HTML de Automation Exercise mediante trabajos asíncronos.
 
----
+## Funcionalidades
 
-## 1. Descripción del proyecto
+- CRUD REST de productos.
+- Persistencia en PostgreSQL.
+- Extracción directa desde `https://automationexercise.com/product_details/{id}` con Jsoup.
+- Procesamiento asíncrono de hasta tres productos simultáneos.
+- Aislamiento de errores por producto.
+- Consulta persistida del estado, progreso y resultado de cada trabajo.
+- Validación de entradas y errores con formato RFC Problem Details.
+- Migraciones versionadas con Flyway.
+- OpenAPI y Swagger UI.
+- CORS configurable para consumo desde frontend.
 
-Backend para la gestión de un catálogo de productos y repuestos de motocicletas, que permite
-administrar productos, marcas y proveedores, y sincronizar información de productos desde una
-fuente externa (Automation Exercise) mediante procesos **asíncronos**. Como funcionalidad
-complementaria, genera una representación visual de facturas en formato PNG.
+## Tecnologías
 
-## 2. Objetivo principal
+- Java 25
+- Spring Boot 4.1
+- Spring Web MVC
+- Spring Data JPA
+- Bean Validation
+- PostgreSQL
+- Flyway
+- Jsoup
+- Maven
+- JUnit 5 y Mockito
+- Springdoc OpenAPI
+- Docker y Docker Compose
 
-- Gestionar el catálogo de productos (CRUD).
-- Gestionar marcas y proveedores.
-- Consultar y actualizar productos desde una fuente externa (scraping HTML, **no API pública**).
-- Ejecutar extracciones de múltiples productos de manera asíncrona, con control de concurrencia.
-- Registrar progreso, resultado y errores de cada extracción.
-- Persistir toda la información en PostgreSQL.
-- (Opcional / extra) Generar una representación visual de factura en PNG.
+Spring Boot permite construir una API REST con poco código de infraestructura. PostgreSQL aporta persistencia transaccional y restricciones de integridad. Jsoup permite obtener y analizar HTML sin utilizar la API pública de Automation Exercise. Flyway mantiene el esquema reproducible y verificable.
 
-## 3. Actores
+## Ejecución local
 
-| Actor | Responsabilidades |
+### Requisitos
+
+- Java 25
+- PostgreSQL
+
+Crear una base de datos vacía llamada `masterbikers`:
+
+```bash
+psql -U postgres -c 'CREATE DATABASE masterbikers;'
+```
+
+Configurar credenciales como variables de entorno y ejecutar:
+
+```bash
+export DB_PASSWORD='tu-clave-local'
+./mvnw spring-boot:run
+```
+
+Valores configurables:
+
+| Variable | Valor predeterminado |
 |---|---|
-| **Administrador** | Administrar productos, consultar catálogo, actualizar/eliminar productos, iniciar sincronizaciones, consultar trabajos de extracción, generar facturas. |
-| **Sistema externo (Automation Exercise)** | Fuente externa usada exclusivamente para la extracción HTML (`automationexercise.com/product_details/{id}`). No se usa su API pública. |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/masterbikers` |
+| `DB_USERNAME` | `postgres` |
+| `DB_PASSWORD` | vacío |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` |
+| `AUTOMATION_EXERCISE_BASE_URL` | `https://automationexercise.com` |
+| `SCRAPER_TIMEOUT_MS` | `10000` |
 
-## 4. Alcance del MVP
+La contraseña no se almacena en el repositorio. Flyway aplica las migraciones al arrancar. Las migraciones crean tablas y restricciones, pero no insertan productos ni datos de demostración.
 
+### Docker Compose
+
+```bash
+export DB_PASSWORD='tu-clave-local'
+docker compose up --build
 ```
-PRODUCTOS ──CRUD──▶ POSTGRESQL ◀──EXTRACCIONES── AUTOMATION EXERCISE
-                                  (crear job, procesar async,
-                                   controlar concurrencia,
-                                   registrar errores,
-                                   consultar progreso)
-```
 
-Facturación, CRUD completo de proveedores, paginación y filtros avanzados son **complementarios**,
-no el núcleo evaluable.
+Esto inicia PostgreSQL y la API. Los datos de PostgreSQL permanecen en el volumen `postgres-data`.
 
----
+## Documentación HTTP
 
-## 5. Requerimientos funcionales
+Con la aplicación ejecutándose:
 
-### 5.1 Gestión de productos
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8080/api-docs`
 
-| ID | Endpoint | Descripción |
+## API de productos
+
+| Método | Ruta | Resultado |
 |---|---|---|
-| RF-01 | `POST /api/v1/products` | Crear producto (nombre, descripción, precio, categoría, disponibilidad, condición, marca, URL de origen, identificador externo). |
-| RF-02 | `GET /api/v1/products` | Listar catálogo (paginación/filtros `page`, `size`, `brand`, `category` no son prioridad inicial). |
-| RF-03 | `GET /api/v1/products/{id}` | Consultar un producto específico. |
-| RF-04 | `PATCH /api/v1/products/{id}` | Actualizar producto. |
-| RF-05 | `DELETE /api/v1/products/{id}` | Eliminar producto. |
+| `POST` | `/api/v1/products` | Crea un producto y responde `201 Created`. |
+| `GET` | `/api/v1/products` | Lista productos. |
+| `GET` | `/api/v1/products/{id}` | Consulta un producto. |
+| `PATCH` | `/api/v1/products/{id}` | Actualiza campos enviados. |
+| `DELETE` | `/api/v1/products/{id}` | Elimina un producto y responde `204 No Content`. |
 
-### 5.2 Marcas
+Producto manual de ejemplo:
 
-- RF-06 — El sistema debe permitir asociar un producto a una marca (`Brand ≠ Supplier`: una marca
-  fabrica/comercializa; un proveedor puede vender productos de varias marcas).
-- Marcas iniciales (seed): Honda, Yamaha, Suzuki, BMW Motorrad, CFMOTO, AKT, Bajaj.
-- `GET /api/v1/brands` — listado (no requiere CRUD completo para el MVP).
-
-### 5.3 Proveedores
-
-- RF-07 — El sistema debe permitir asociar productos con proveedores.
-- No se requiere CRUD completo de proveedores en el MVP si consume tiempo del núcleo evaluable;
-  se deja la estructura de dominio preparada (`supplier_id` nullable en `Product`).
-- `GET /api/v1/suppliers` — listado.
-
-### 5.4 Extracción de productos (funcionalidad central)
-
-| ID | Endpoint | Descripción |
-|---|---|---|
-| RF-08 | `POST /api/v1/extractions` | Crea un trabajo de extracción a partir de `{ "productIds": [1,2,3,4,5] }`. Responde `202 Accepted` con `{ "id", "status": "PENDING" }` **sin esperar** a que termine el procesamiento. |
-| RF-09 | — | El procesamiento no debe bloquear la petición HTTP (asíncrono en background). |
-| RF-10 | — | Límite de concurrencia contra la fuente externa (propuesta: **máx. 3 productos simultáneos**). |
-| RF-11 | — | El fallo de un producto no detiene el resto del job; el job puede terminar como `COMPLETED_WITH_ERRORS`. |
-| RF-12 | `GET /api/v1/extractions/{id}` | Consulta estado/progreso: `{ id, status, total, processed, successful, failed }`. |
-| RF-13 | `GET /api/v1/extractions/{id}/items` | Resultado por producto: `[{ externalProductId, status, errorMessage? }]`. |
-| RF-14 | — | Scraping HTML directo de `automationexercise.com/product_details/{id}` (no la API pública). Debe tolerar campos ausentes. Campos a extraer: `externalId, name, price, category, availability, condition, brand, sourceUrl`. |
-| RF-15 | — | Toda la información relevante debe persistirse en PostgreSQL (no solo en memoria). |
-
-**Estados del job (`ExtractionJob.status`):** `PENDING → PROCESSING → COMPLETED | COMPLETED_WITH_ERRORS | FAILED`
-**Estados del item (`ExtractionItem.status`):** `PENDING → PROCESSING → SUCCESS | FAILED`
-
-### 5.5 Facturación (extra / complementario)
-
-| ID | Endpoint | Descripción |
-|---|---|---|
-| RF-16 | `POST /api/v1/invoices` | Crea factura con cliente, documento, fecha, productos, cantidades; el backend calcula subtotal, impuestos y total. Se guarda `unit_price` histórico (no depende del precio actual del producto). |
-| RF-17 | `GET /api/v1/invoices/{id}/png` | Genera representación visual de la factura en PNG (no es facturación electrónica DIAN). El PNG se genera on-demand, no se almacena como blob en BD. |
-
----
-
-## 6. Requerimientos no funcionales
-
-| ID | Requerimiento |
-|---|---|
-| RNF-01 | Arquitectura modular con Spring Boot, organizada por *feature* (product, brand, supplier, extraction, scraper, invoice, common). |
-| RNF-02 | Persistencia en PostgreSQL. |
-| RNF-03 | API REST con códigos HTTP correctos: 200, 201, 202, 204, 400, 404, 409, 500. |
-| RNF-04 | Validación de requests (`price > 0`, `name` obligatorio, `quantity > 0`, etc.). |
-| RNF-05 | Manejo de errores estructurado (sin stacktraces expuestos al cliente). |
-| RNF-06 | Concurrencia del scraper limitada (propuesta: 3 workers). |
-| RNF-07 | Historial de Git organizado y significativo. |
-| RNF-08 | Ejecutable vía Docker Compose. |
-
----
-
-## 7. Decisiones técnicas cerradas
-
-### 7.1 Stack
-
-Java 25 · Spring Boot 3.5.x · Spring Web · Spring Data JPA · Bean Validation · PostgreSQL ·
-Jsoup (scraping) · Flyway (migraciones) · Maven · JUnit 5 + Mockito · Docker / Docker Compose ·
-OpenAPI / Swagger.
-
-Explícitamente **fuera de alcance**: Spring Security/JWT (no se pidió autenticación),
-Redis/Kafka/RabbitMQ/microservicios (sobreingeniería para esta prueba), Lombok inicialmente
-(se prefiere código explícito y fácil de defender en la entrevista).
-
-### 7.2 Arquitectura por capas (feature-based)
-
-```
-src/main/java/com/masterbikers
-├── product/       (controller, service, repository, entity, dto, mapper)
-├── brand/         (controller, service, repository, entity)
-├── supplier/      (controller, service, repository, entity)
-├── extraction/    (controller, service, repository, entity, dto)
-├── scraper/       (AutomationExerciseScraper, ProductParser)
-├── invoice/       (controller, service, repository, entity, dto)
-└── common/        (exception, config, response)
+```json
+{
+  "name": "Casco integral",
+  "description": "Casco certificado para uso urbano",
+  "price": 349900.00,
+  "category": "Protección",
+  "availability": "IN_STOCK",
+  "condition": "NEW",
+  "brand": "Ejemplo"
+}
 ```
 
-### 7.3 Convenciones de datos
+`externalId` y `source` son opcionales para productos manuales. Cuando están presentes, deben enviarse juntos. Productos extraídos utilizan `source: "AUTOMATION_EXERCISE"` y se actualizan por la combinación única `(source, externalId)`.
 
-- **Identificadores:** `UUID` para todas las entidades de negocio (no exponer IDs secuenciales).
-- **Dinero:** `BigDecimal` (nunca `double`/`float`).
-- **Fechas:** `Instant` para timestamps internos (evita problemas de zona horaria).
-- **Deduplicación externa:** `UNIQUE(source, external_id)` en `products` — permite que distintas
-  fuentes reutilicen el mismo `external_id` sin colisionar.
-- **Migraciones versionadas con Flyway** (`V1__create_brands.sql`, `V2__...`) en vez de
-  `spring.jpa.hibernate.ddl-auto=update`, para que el repositorio sea reproducible por el evaluador.
+Valores permitidos:
 
-### 7.4 Endpoints definitivos
+- `availability`: `IN_STOCK`, `OUT_OF_STOCK`, `UNKNOWN`
+- `condition`: `NEW`, `USED`, `REFURBISHED`, `UNKNOWN`
 
-```
-Products      POST/GET /api/v1/products, GET/PATCH/DELETE /api/v1/products/{id}
-Extractions   POST /api/v1/extractions, GET /api/v1/extractions/{id}, GET /api/v1/extractions/{id}/items
-Invoices      POST /api/v1/invoices, GET /api/v1/invoices/{id}, GET /api/v1/invoices/{id}/png
-Brands        GET /api/v1/brands
-Suppliers     GET /api/v1/suppliers
+## API de extracciones
+
+Crear trabajo:
+
+```http
+POST /api/v1/extractions
+Content-Type: application/json
 ```
 
-### 7.5 Spring Initializr
+```json
+{
+  "productIds": [1, 2, 3, 4, 5]
+}
+```
 
-- **Project:** Maven · **Language:** Java · **Spring Boot:** 3.5.x (o 4.x estable compatible con Java 25)
-- **Group:** `com.masterbikers` · **Artifact/Name:** `master-bikers` · **Package:** `com.masterbikers`
-- **Packaging:** Jar · **Java:** 25
-- **Dependencias obligatorias:** Spring Web, Spring Data JPA, PostgreSQL Driver, Validation
-- **Recomendadas:** Spring Boot DevTools, Spring Boot Actuator
-- **Agregar después vía `pom.xml`:** Springdoc OpenAPI/Swagger, Flyway
-- **No seleccionar:** Spring Security, HATEOAS, Batch, Cloud, Kafka, RabbitMQ, Redis, Thymeleaf, Lombok (por ahora)
+Respuesta inmediata:
 
----
+```http
+HTTP/1.1 202 Accepted
+Location: /api/v1/extractions/{id}
+```
 
-## 8. Modelo de datos
+```json
+{
+  "id": "e11a3174-456f-4dc1-b495-51455fcab207",
+  "status": "PENDING"
+}
+```
 
-Ver diagramas adjuntos:
-- `master-bikers-erd.drawio` — Diagrama Entidad-Relación (7 tablas: `brands`, `suppliers`,
-  `products`, `extraction_jobs`, `extraction_items`, `invoices`, `invoice_items`).
-- `master-bikers-class-diagram.drawio` — Diagrama de clases (entidades JPA + enums:
-  `Availability`, `ProductCondition`, `ExtractionStatus`, `ExtractionItemStatus`).
-- Carpeta `sql/` — migraciones Flyway `V1` a `V8` con el schema completo + seed de marcas.
+Consultar progreso:
 
-Relaciones clave:
-- `Brand 1 ─── N Product` (obligatoria)
-- `Supplier 1 ─── N Product` (opcional, `supplier_id` nullable)
-- `ExtractionJob 1 ─── N ExtractionItem`
-- `Product 1 ─── N ExtractionItem` (`product_id` nullable — puede ser `NULL` si la extracción falló)
-- `Invoice 1 ─── N InvoiceItem`
-- `Product 1 ─── N InvoiceItem`
+```http
+GET /api/v1/extractions/{id}
+```
 
----
+```json
+{
+  "id": "e11a3174-456f-4dc1-b495-51455fcab207",
+  "status": "PROCESSING",
+  "total": 5,
+  "processed": 3,
+  "successful": 2,
+  "failed": 1,
+  "createdAt": "2026-08-16T14:00:00Z",
+  "startedAt": "2026-08-16T14:00:00Z",
+  "finishedAt": null
+}
+```
 
-## 9. Priorización para los 3 días
+Consultar resultado individual:
 
-### 🔴 P0 — Obligatorio (núcleo evaluable)
-Spring Boot · PostgreSQL · Product CRUD · JPA · DTOs · Validation · Exception handling ·
-HTML scraper · ExtractionJob · ExtractionItem · Async processing · Concurrency limit ·
-Extraction status · Git · README.
+```http
+GET /api/v1/extractions/{id}/items
+```
 
-### 🟠 P1 — Muy recomendable
-Tests · Docker Compose · Swagger · Paginación · Retry · Seed de marcas.
+Estados del trabajo:
 
-### 🟢 P2 — Extra (no arriesgar el núcleo por esto)
-Suppliers CRUD completo · Invoices · Factura PNG · Filtros avanzados.
+```text
+PENDING -> PROCESSING -> COMPLETED
+                      -> COMPLETED_WITH_ERRORS
+                      -> FAILED
+```
 
-> Regla de oro: si llega el día 3 y el núcleo (Product CRUD, scraping, async, persistencia,
-> manejo de errores, tests, Docker, README) está listo, **no** empezar la factura si eso
-> amenaza la estabilidad de lo ya evaluado.
+Estados de cada producto:
 
----
+```text
+PENDING -> PROCESSING -> SUCCESS
+                      -> FAILED
+```
 
-## 10. Entregables (según el reto)
+## Procesamiento asíncrono
 
-1. Repositorio en GitHub con `gruporedoficial` como colaborador.
-2. Código fuente + historial de Git significativo.
-3. `README.md` con: cómo ejecutar la app, tecnologías utilizadas y por qué, descripción general,
-   estrategia de procesamiento asíncrono, decisiones/trade-offs relevantes, uso de IA (si aplica),
-   qué mejoraría con más tiempo.
+1. Petición crea `ExtractionJob` y sus `ExtractionItem` dentro de una transacción.
+2. API responde `202 Accepted` sin esperar scraping.
+3. Evento se procesa después del commit mediante executor de trabajos.
+4. Items se envían a executor separado con máximo tres threads.
+5. Cada item marca `PROCESSING` dentro de transacción corta.
+6. Solicitud HTTP externa ocurre fuera de transacción de base de datos.
+7. Producto se crea o actualiza y el item termina en `SUCCESS`; errores terminan en `FAILED` sin detener demás items.
+8. Estado final se calcula usando estados persistidos.
 
-## 11. Criterios de evaluación (según el reto)
+Los contadores de progreso se consultan desde `extraction_items`; no dependen de memoria del proceso. Bloqueos pesimistas protegen transiciones iniciales frente a procesamiento duplicado.
 
-Comprensión del problema · funcionamiento de la solución · diseño y organización del código ·
-uso adecuado de REST y persistencia · manejo de asincronismo · manejo de errores y estados ·
-capacidad de extraer/transformar información externa · claridad de decisiones técnicas ·
-uso razonable de tecnologías (no se premia usar más por usar más) · calidad del historial y
-documentación del repo.
+## Modelo y migraciones
+
+Migraciones en `src/main/resources/db/migration`:
+
+- `V1__create_products.sql`
+- `V2__create_extraction_jobs_and_items.sql`
+
+Esquema mínimo deliberado:
+
+- `products`
+- `extraction_jobs`
+- `extraction_items`
+
+Marca se almacena como texto porque Automation Exercise entrega marcas dinámicas. Esto evita catálogos precargados y mantiene foco en requerimientos obligatorios. Proveedores y facturación quedan fuera del MVP porque no forman parte del núcleo solicitado.
+
+## Pruebas
+
+```bash
+./mvnw test
+```
+
+Pruebas cubren:
+
+- validación de creación y actualización de productos;
+- creación, consulta y eliminación en servicio;
+- deduplicación por referencia externa;
+- parsing HTML sin acceso de red;
+- validación de solicitudes de extracción;
+- transiciones de jobs e items;
+- cálculo persistido del progreso.
+
+## Manejo de errores
+
+API responde `application/problem+json` para errores `400`, `404`, `409` y `500`. Errores inesperados se registran en servidor, pero stacktraces no se exponen al cliente. Cada fallo de scraping conserva mensaje seguro dentro del item correspondiente.
+
+## Decisiones y trade-offs
+
+- Executors internos evitan agregar Redis, RabbitMQ o Kafka para un servicio pequeño y una prueba de tres días.
+- Límite global de tres threads evita consultas externas ilimitadas.
+- Estados y resultados viven en PostgreSQL; executor solo ejecuta trabajo.
+- Reinicio durante procesamiento puede dejar jobs en `PROCESSING`. En producción se agregaría recuperación de jobs incompletos al arrancar o una cola durable.
+- Lista de productos no tiene paginación en MVP. Se agregaría antes de manejar catálogos grandes.
+- No se agregó autenticación porque el reto no la solicita.
+- No se agregaron reintentos automáticos para evitar duplicar tráfico externo; serían mejora posterior con backoff para errores temporales.
+
+## Uso de inteligencia artificial
+
+Se utilizó Devin como apoyo para analizar requerimientos, revisar decisiones, implementar partes del código y ejecutar verificaciones. Las decisiones finales, estructura y comportamiento deben revisarse y comprenderse antes de presentar la solución.
+
+## Mejoras con más tiempo
+
+- Recuperación automática de trabajos interrumpidos.
+- Reintentos con backoff para errores HTTP temporales.
+- Paginación y filtros de productos.
+- Pruebas de integración con PostgreSQL mediante Testcontainers.
+- Métricas de duración, éxito y fallo de scraping.
+- Idempotencia para solicitudes de extracción equivalentes.
