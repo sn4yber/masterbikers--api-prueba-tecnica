@@ -92,11 +92,20 @@ docker compose logs -f api
 
 Esto inicia PostgreSQL en `localhost:${DB_PORT}` (`5433` en `.env`) y API en `localhost:8080`. Dentro de Compose, backend usa `postgres:5432`. Datos permanecen en volumen `postgres18-data` montado según estructura requerida por PostgreSQL 18.
 
+## Despliegue y estado final
+
+La aplicación completa (frontend Angular + API + PostgreSQL) está desplegada en un único Droplet de DigitalOcean.
+
+Se evaluó inicialmente separar el frontend en Netlify y la API en DigitalOcean. Ese enfoque se descartó: sin un dominio propio, la API solo podía exponerse por HTTP plano, y los navegadores bloquean por defecto las peticiones desde un origen HTTPS (Netlify) hacia un origen HTTP (mixed content). Sin certificado SSL para la IP del Droplet, esa combinación no es viable.
+
+**Solución adoptada:** el build de producción de Angular se sirve como recurso estático desde el propio Spring Boot (`src/main/resources/static/`), quedando frontend y API bajo el mismo origen. Un `ForwardController` reenvía las rutas del lado del cliente de Angular (`/products`, `/dashboard`, etc.) hacia `index.html`, para que las recargas de página no devuelvan `404`, excluyendo explícitamente las rutas propias de la API, Actuator y Swagger.
+
+Esto permite entregar una única URL, sin advertencias de seguridad del navegador y sin depender de un dominio o certificado.
+
 ## Documentación HTTP
 
 Despliegue público en DigitalOcean:
-- URL Fronted :https://masterbikers.netlify.app/
-- URL base de la API: `http://45.55.225.78:8080`
+- Aplicación completa (frontend + API): `http://45.55.225.78:8080`
 - Swagger UI: `http://45.55.225.78:8080/swagger-ui.html`
 - OpenAPI JSON: `http://45.55.225.78:8080/api-docs`
 - Salud: `http://45.55.225.78:8080/actuator/health`
@@ -311,6 +320,7 @@ API responde `application/problem+json` para errores `400`, `404`, `409` y `500`
 - Idempotencia reutiliza indefinidamente trabajo equivalente; una futura operación explícita podría forzar resincronización.
 - Filtros textuales priorizan simplicidad; catálogos grandes podrían requerir índices trigram y búsqueda dedicada.
 - No se agregó autenticación porque el reto no la solicita.
+- Frontend y backend se sirven desde el mismo origen (Spring Boot static resources) en lugar de hosting separado, para evitar bloqueos de mixed content sin necesidad de comprar un dominio y certificado SSL solo para la prueba técnica.
 
 ## Uso de inteligencia artificial
 
